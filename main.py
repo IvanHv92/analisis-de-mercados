@@ -1,4 +1,4 @@
-import requests, pandas as pd, ta, time, csv
+import requests, pandas as pd, ta, time
 from datetime import datetime
 from flask import Flask
 from threading import Thread
@@ -16,22 +16,17 @@ PARES = [
     "GBP/JPY", "USD/BDT", "USD/EGP", "USD/MXN"
 ]
 
-ULTIMAS_SENIALES = {}
-
+# Enviar mensaje a Telegram
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
     requests.post(url, data=data)
 
-def guardar_csv(fecha, par, tipo, estrategias, precio, expiracion):
-    with open("senales_final.csv", "a", newline="") as f:
-        csv.writer(f).writerow([fecha, par, tipo, estrategias, round(precio, 5), expiracion])
-
+# Obtener datos del par
 def obtener_datos(symbol):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=30&apikey={API_KEY}"
     r = requests.get(url).json()
     if "values" not in r:
-        print(f"❌ Error al obtener datos de {symbol}")
         return None
     df = pd.DataFrame(r["values"])
     df["datetime"] = pd.to_datetime(df["datetime"])
@@ -41,80 +36,44 @@ def obtener_datos(symbol):
     df["low"] = df["low"].astype(float)
     return df
 
-def analizar(symbol):
-    df = obtener_datos(symbol)
-    if df is None:
-        return
+# Analizar volatilidad
+def analizar_volatilidad():
+    seguros = []
+    volatiles = []
 
-    df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
-    df["ema9"] = ta.trend.EMAIndicator(df["close"], 9).ema_indicator()
-    df["ema20"] = ta.trend.EMAIndicator(df["close"], 20).ema_indicator()
+    for par in PARES:
+        df = obtener_datos(par)
+        if df is None:
+            continue
 
-    adx = ta.trend.ADXIndicator(high=df["high"], low=df["low"], close=df["close"])
-    df["adx"] = adx.adx()
-    df["+di"] = adx.adx_pos()
-    df["-di"] = adx.adx_neg()
+        u = df.iloc[-1]
+        rango = (u["high"] - u["low"]) / u["close"]
 
-    macd = ta.trend.MACD(df["close"])
-    df["macd"] = macd.macd()
-    df["macd_signal"] = macd.macd_signal()
+        if rango > 0.04:
+            volatiles.append(f"❌ {par} (Rango: {round(rango * 100, 2)}%)")
+        else:
+            seguros.append(f"✅ {par} (Rango: {round(rango * 100, 2)}%)")
 
-    u = df.iloc[-1]
-    a = df.iloc[-2]
-    estrategias = []
+    mensaje = "📊 *Análisis de Volatilidad (cada 30 min)*\n\n"
+    mensaje += "🟢 Mercados seguros:\n" + ("\n".join(seguros) if seguros else "Ninguno") + "\n\n"
+    mensaje += "🔴 Mercados volátiles:\n" + ("\n".join(volatiles) if volatiles else "Ninguno")
+    enviar_telegram(mensaje)
+    print(mensaje)
 
-    if a["ema9"] < a["ema20"] and u["ema9"] > u["ema20"]:
-        estrategias.append("Cruce EMA CALL")
-    if a["ema9"] > a["ema20"] and u["ema9"] < u["ema20"]:
-        estrategias.append("Cruce EMA PUT")
-
-    if a["ema9"] < a["ema20"] and u["ema9"] > u["ema20"] and u["rsi"] > 50:
-        estrategias.append("Cruce EMA + RSI CALL")
-    if a["ema9"] > a["ema20"] and u["ema9"] < u["ema20"] and u["rsi"] < 50:
-        estrategias.append("Cruce EMA + RSI PUT")
-
-    if a["macd"] < a["macd_signal"] and u["macd"] > u["macd_signal"] and u["rsi"] > 50:
-        estrategias.append("RSI + MACD CALL")
-    if a["macd"] > a["macd_signal"] and u["macd"] < u["macd_signal"] and u["rsi"] < 50:
-        estrategias.append("RSI + MACD PUT")
-
-    if u["adx"] > 20:
-        if u["+di"] > u["-di"] and u["ema9"] > u["ema20"]:
-            estrategias.append("ADX + EMA CALL")
-        if u["-di"] > u["+di"] and u["ema9"] < u["ema20"]:
-            estrategias.append("ADX + EMA PUT")
-
-    if len(estrategias) >= 2:
-        tipo = "CALL" if "CALL" in " ".join(estrategias) else "PUT"
-        fuerza = len(estrategias)
-        expiracion = "5 min" if fuerza >= 3 else "3 min"
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        estrellas = "⭐" * fuerza
-        mensaje = (
-            f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
-            + "\n".join(estrategias) +
-            f"\n⏱️ Expiración sugerida: {expiracion}\n"
-            f"📈 Confianza: {estrellas}"
-        )
-        enviar_telegram(mensaje)
-        guardar_csv(fecha, symbol, tipo, ", ".join(estrategias), u["close"])
-        print(mensaje)
-    else:
-        print(f"[{symbol}] ❌ Señal débil (menos de 2 estrategias)")
-
+# Bucle cada 30 minutos
 def iniciar():
     while True:
-        print("⏳ Analizando todos los pares...")
-        for par in PARES:
-            analizar(par)
-        print("🕒 Esperando 2 minutos...\n")
-        time.sleep(120)
+        print("🔍 Ejecutando análisis de volatilidad...")
+        analizar_volatilidad()
+        print("🕒 Esperando 30 minutos...\n")
+        time.sleep(1800)
 
+# Flask para mantener activo
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "✅ Bot activo con estrategias: EMA, EMA+RSI, RSI+MACD, ADX+EMA (cada 2 min)"
+    return "✅ Bot de análisis de volatilidad activo (cada 30 min)"
 
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 iniciar()

@@ -9,12 +9,11 @@ INTERVAL = "5min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
-# Pares a analizar (excluyendo USD/EGP)
 PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
     "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN"
+    "GBP/JPY", "USD/BDT", "USD/EGP", "USD/MXN"
 ]
 
 ULTIMAS_SENIALES = {}
@@ -38,6 +37,8 @@ def obtener_datos(symbol):
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime")
     df["close"] = df["close"].astype(float)
+    df["high"] = df["high"].astype(float)
+    df["low"] = df["low"].astype(float)
     return df
 
 def analizar(symbol):
@@ -54,14 +55,14 @@ def analizar(symbol):
     a = df.iloc[-2]
     estrategias = []
 
-    # Triple EMA + RSI
-    if a["ema9"] < a["ema20"] < a["ema50"] and u["ema9"] > u["ema20"] > u["ema50"] and u["rsi"] > 50:
+    # EMA 9 cruza EMA 20 y ambas por encima o debajo de EMA 50
+    if a["ema9"] < a["ema20"] and u["ema9"] > u["ema20"] and u["ema9"] > u["ema50"] and u["ema20"] > u["ema50"] and u["rsi"] > 50:
         estrategias.append("Triple EMA + RSI CALL")
-    if a["ema9"] > a["ema20"] > a["ema50"] and u["ema9"] < u["ema20"] < u["ema50"] and u["rsi"] < 50:
+    if a["ema9"] > a["ema20"] and u["ema9"] < u["ema20"] and u["ema9"] < u["ema50"] and u["ema20"] < u["ema50"] and u["rsi"] < 50:
         estrategias.append("Triple EMA + RSI PUT")
 
-    if estrategias:
-        tipo = "CALL" if "CALL" in " ".join(estrategias) else "PUT"
+    if len(estrategias) >= 1:
+        tipo = "CALL" if "CALL" in estrategias[0] else "PUT"
         fuerza = len(estrategias)
         expiracion = "5 min"
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -86,12 +87,11 @@ def iniciar():
         print("🕒 Esperando 2 minutos...\n")
         time.sleep(120)
 
-# Flask para mantener activo en Render
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "✅ Bot activo con estrategia: Triple EMA + RSI (cada 2 min)"
+    return "✅ Bot activo con estrategia Triple EMA + RSI (cada 2 min)"
 
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 iniciar()

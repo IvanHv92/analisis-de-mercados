@@ -38,8 +38,6 @@ def obtener_datos(symbol):
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime")
     df["close"] = df["close"].astype(float)
-    df["high"] = df["high"].astype(float)
-    df["low"] = df["low"].astype(float)
     return df
 
 def analizar(symbol):
@@ -50,45 +48,22 @@ def analizar(symbol):
     df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
     df["ema9"] = ta.trend.EMAIndicator(df["close"], 9).ema_indicator()
     df["ema20"] = ta.trend.EMAIndicator(df["close"], 20).ema_indicator()
-
-    adx = ta.trend.ADXIndicator(high=df["high"], low=df["low"], close=df["close"])
-    df["adx"] = adx.adx()
-    df["+di"] = adx.adx_pos()
-    df["-di"] = adx.adx_neg()
-
-    macd = ta.trend.MACD(df["close"])
-    df["macd"] = macd.macd()
-    df["macd_signal"] = macd.macd_signal()
+    df["ema50"] = ta.trend.EMAIndicator(df["close"], 50).ema_indicator()
 
     u = df.iloc[-1]
     a = df.iloc[-2]
     estrategias = []
 
-    if a["ema9"] < a["ema20"] and u["ema9"] > u["ema20"]:
-        estrategias.append("Cruce EMA CALL")
-    if a["ema9"] > a["ema20"] and u["ema9"] < u["ema20"]:
-        estrategias.append("Cruce EMA PUT")
+    # Triple EMA + RSI
+    if a["ema9"] < a["ema20"] < a["ema50"] and u["ema9"] > u["ema20"] > u["ema50"] and u["rsi"] > 50:
+        estrategias.append("Triple EMA + RSI CALL")
+    if a["ema9"] > a["ema20"] > a["ema50"] and u["ema9"] < u["ema20"] < u["ema50"] and u["rsi"] < 50:
+        estrategias.append("Triple EMA + RSI PUT")
 
-    if a["ema9"] < a["ema20"] and u["ema9"] > u["ema20"] and u["rsi"] > 50:
-        estrategias.append("Cruce EMA + RSI CALL")
-    if a["ema9"] > a["ema20"] and u["ema9"] < u["ema20"] and u["rsi"] < 50:
-        estrategias.append("Cruce EMA + RSI PUT")
-
-    if a["macd"] < a["macd_signal"] and u["macd"] > u["macd_signal"] and u["rsi"] > 50:
-        estrategias.append("RSI + MACD CALL")
-    if a["macd"] > a["macd_signal"] and u["macd"] < u["macd_signal"] and u["rsi"] < 50:
-        estrategias.append("RSI + MACD PUT")
-
-    if u["adx"] > 20:
-        if u["+di"] > u["-di"] and u["ema9"] > u["ema20"]:
-            estrategias.append("ADX + EMA CALL")
-        if u["-di"] > u["+di"] and u["ema9"] < u["ema20"]:
-            estrategias.append("ADX + EMA PUT")
-
-    if len(estrategias) >= 2:
+    if estrategias:
         tipo = "CALL" if "CALL" in " ".join(estrategias) else "PUT"
         fuerza = len(estrategias)
-        expiracion = "5 min" if fuerza >= 3 else "3 min"
+        expiracion = "5 min"
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         estrellas = "⭐" * fuerza
         mensaje = (
@@ -101,7 +76,7 @@ def analizar(symbol):
         guardar_csv(fecha, symbol, tipo, ", ".join(estrategias), u["close"], expiracion)
         print(mensaje)
     else:
-        print(f"[{symbol}] ❌ Señal débil (menos de 2 estrategias)")
+        print(f"[{symbol}] ❌ Sin señal clara")
 
 def iniciar():
     while True:
@@ -111,11 +86,12 @@ def iniciar():
         print("🕒 Esperando 2 minutos...\n")
         time.sleep(120)
 
+# Flask para mantener activo en Render
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "✅ Bot activo con estrategias: EMA, EMA+RSI, RSI+MACD, ADX+EMA (cada 2 min)"
+    return "✅ Bot activo con estrategia: Triple EMA + RSI (cada 2 min)"
 
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 iniciar()

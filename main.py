@@ -13,7 +13,7 @@ PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY", "CAD/CHF",
     "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD", "CAD/JPY",
-    "GBP/JPY", "USD/BDT", "USD/EGP", "USD/MXN"
+    "GBP/JPY", "GBP/AUD", "EUR/AUD", "USD/BDT", "USD/EGP", "USD/MXN"
 ]
 
 ULTIMAS_SENIALES = {}

@@ -11,10 +11,11 @@ TELEGRAM_CHAT_ID = "5989911212"
 
 # Pares a analizar (excluyendo USD/EGP)
 PARES = [
-    "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
+    "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY", "EUR/AUD",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
     "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN"
+    "GBP/JPY", "USD/BDT", "USD/MXN",
+    "CAD/JPY", "GBP/CAD", "CAD/CHF", "NZD/CAD"
 ]
 
 ULTIMAS_SENIALES = {}

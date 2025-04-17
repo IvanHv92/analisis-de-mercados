@@ -11,8 +11,8 @@ TELEGRAM_CHAT_ID = "5989911212"
 
 PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
-    "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
-    "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
+    "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY", "CAD/CHF",
+    "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD", "CAD/JPY",
     "GBP/JPY", "USD/BDT", "USD/EGP", "USD/MXN"
 ]
 

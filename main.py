@@ -5,11 +5,10 @@ from threading import Thread
 
 # CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
-INTERVAL = "3min"
+INTERVAL = "3min"  # Velas de 3 minutos
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
-# Pares a analizar (excluyendo USD/EGP)
 PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY", "EUR/AUD",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
@@ -92,7 +91,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "✅ Bot activo con estrategia: Triple EMA + RSI (cada 2 min)"
+    return "✅ Bot activo con estrategia: Triple EMA + RSI (cada 3 min)"
 
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 iniciar()

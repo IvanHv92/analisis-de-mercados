@@ -84,8 +84,8 @@ def iniciar():
         print("⏳ Analizando todos los pares...")
         for par in PARES:
             analizar(par)
-        print("🕒 Esperando 2 minutos...\n")
-        time.sleep(120)
+        print("🕒 Esperando 1 minutos...\n")
+        time.sleep(60)
 
 # Flask para mantener activo en Render
 app = Flask('')

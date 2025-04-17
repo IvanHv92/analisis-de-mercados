@@ -5,7 +5,7 @@ from threading import Thread
 
 # CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
-INTERVAL = "5min"
+INTERVAL = "3min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
@@ -84,8 +84,8 @@ def iniciar():
         print("⏳ Analizando todos los pares...")
         for par in PARES:
             analizar(par)
-        print("🕒 Esperando 1 minutos...\n")
-        time.sleep(60)
+        print("🕒 Esperando 3 minutos...\n")
+        time.sleep(180)
 
 # Flask para mantener activo en Render
 app = Flask('')

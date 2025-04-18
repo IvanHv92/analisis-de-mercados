@@ -1,9 +1,11 @@
 import requests, pandas as pd, ta, time, csv
 from datetime import datetime
+from flask import Flask
+from threading import Thread
 
 # CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
-INTERVAL = "1min"  # Ahora velas de 1 minuto
+INTERVAL = "1min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
@@ -11,21 +13,24 @@ PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
     "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN",
-    "CAD/JPY", "GBP/CAD", "CAD/CHF", "NZD/CAD", "EUR/AUD"
+    "GBP/JPY", "USD/BDT", "USD/MXN", "CAD/JPY",
+    "GBP/CAD", "CAD/CHF", "NZD/CAD", "EUR/AUD"
 ]
 
 ULTIMAS_SENIALES = {}
 
+# Enviar mensaje por Telegram
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
     requests.post(url, data=data)
 
+# Guardar en CSV
 def guardar_csv(fecha, par, tipo, estrategias, precio, expiracion):
-    with open("senales_triple_ema_rsi.csv", "a", newline="") as f:
+    with open("senales_final.csv", "a", newline="") as f:
         csv.writer(f).writerow([fecha, par, tipo, estrategias, round(precio, 5), expiracion])
 
+# Obtener datos históricos
 def obtener_datos(symbol):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
     r = requests.get(url).json()
@@ -38,6 +43,7 @@ def obtener_datos(symbol):
     df["close"] = df["close"].astype(float)
     return df
 
+# Análisis con Triple EMA + RSI
 def analizar(symbol):
     df = obtener_datos(symbol)
     if df is None:
@@ -58,7 +64,7 @@ def analizar(symbol):
         estrategias.append("Triple EMA + RSI PUT")
 
     if estrategias:
-        tipo = "CALL" if "CALL" in " ".join(estrategias) else "PUT"
+        tipo = "CALL" if "CALL" in estrategias[0] else "PUT"
         fuerza = len(estrategias)
         expiracion = "5 min"
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -75,13 +81,21 @@ def analizar(symbol):
     else:
         print(f"[{symbol}] ❌ Sin señal clara")
 
+# Loop principal
 def iniciar():
     while True:
         print("⏳ Analizando todos los pares...")
         for par in PARES:
             analizar(par)
-        print("🕒 Esperando 21 minutos...\n")
+        print("🕒 Esperando 1 minutos...\n")
         time.sleep(60)
 
-if __name__ == "__main__":
-    iniciar()
+# Flask para Render
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "✅ Bot activo con Triple EMA + RSI (cada 2 min)"
+
+Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
+iniciar()

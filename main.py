@@ -1,11 +1,9 @@
 import requests, pandas as pd, ta, time, csv
 from datetime import datetime
-from flask import Flask
-from threading import Thread
 
 # CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
-INTERVAL = "1min"
+INTERVAL = "1min"  # Ahora velas de 1 minuto
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
@@ -25,7 +23,7 @@ def enviar_telegram(mensaje):
     requests.post(url, data=data)
 
 def guardar_csv(fecha, par, tipo, estrategias, precio, expiracion):
-    with open("senales_final.csv", "a", newline="") as f:
+    with open("senales_triple_ema_rsi.csv", "a", newline="") as f:
         csv.writer(f).writerow([fecha, par, tipo, estrategias, round(precio, 5), expiracion])
 
 def obtener_datos(symbol):
@@ -54,20 +52,19 @@ def analizar(symbol):
     a = df.iloc[-2]
     estrategias = []
 
-    # Triple EMA + RSI relajado
-    if a["ema9"] < a["ema20"] < a["ema50"] and u["ema9"] > u["ema20"] > u["ema50"] and u["rsi"] > 45:
-        estrategias.append("Triple EMA + RSI CALL (versión relajada)")
-    if a["ema9"] > a["ema20"] > a["ema50"] and u["ema9"] < u["ema20"] < u["ema50"] and u["rsi"] < 55:
-        estrategias.append("Triple EMA + RSI PUT (versión relajada)")
+    if a["ema9"] < a["ema20"] < a["ema50"] and u["ema9"] > u["ema20"] > u["ema50"] and u["rsi"] > 50:
+        estrategias.append("Triple EMA + RSI CALL")
+    if a["ema9"] > a["ema20"] > a["ema50"] and u["ema9"] < u["ema20"] < u["ema50"] and u["rsi"] < 50:
+        estrategias.append("Triple EMA + RSI PUT")
 
     if estrategias:
-        tipo = "CALL" if "CALL" in estrategias[0] else "PUT"
+        tipo = "CALL" if "CALL" in " ".join(estrategias) else "PUT"
         fuerza = len(estrategias)
         expiracion = "5 min"
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         estrellas = "⭐" * fuerza
         mensaje = (
-            f"📊 SEÑAL RELAJADA {tipo} en {symbol} ({fecha}):\n"
+            f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
             + "\n".join(estrategias) +
             f"\n⏱️ Expiración sugerida: {expiracion}\n"
             f"📈 Confianza: {estrellas}"
@@ -83,15 +80,8 @@ def iniciar():
         print("⏳ Analizando todos los pares...")
         for par in PARES:
             analizar(par)
-        print("🕒 Esperando 1 minutos...\n")
+        print("🕒 Esperando 21 minutos...\n")
         time.sleep(60)
 
-# Flask para mantener activo
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "✅ Bot RELAJADO activo: Triple EMA + RSI (1min, cada 2 min)"
-
-Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
-iniciar()
+if __name__ == "__main__":
+    iniciar()

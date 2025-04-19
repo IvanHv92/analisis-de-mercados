@@ -13,7 +13,7 @@ PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
     "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN",
+    "GBP/JPY", "USD/BDT", "USD/MXN", "EUR/NZD", "GBP/CHF",
     "CAD/JPY", "GBP/CAD", "CAD/CHF", "NZD/CAD", "EUR/AUD"
 ]
 

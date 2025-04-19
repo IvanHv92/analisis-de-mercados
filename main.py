@@ -11,11 +11,11 @@ TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
 SYMBOLS = [
-    "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "NZD/USD",
-    "EUR/JPY", "GBP/JPY", "EUR/GBP", "USD/CAD", "AUD/JPY", "EUR/CHF",
-    "GBP/CHF", "CAD/JPY", "NZD/JPY", "USD/SGD", "EUR/CAD", "EUR/AUD",
-    "GBP/AUD", "AUD/CAD", "NZD/CAD", "AUD/NZD", "CHF/JPY", "USD/HKD",
-    "USD/TRY", "EUR/TRY", "GBP/NZD", "EUR/NZD", "USD/MXN", "USD/ZAR"
+    "EURUSD", "GBPUSD", "USDJPY", "USDCHF", "AUDUSD", "NZDUSD",
+    "EURJPY", "GBPJPY", "EURGBP", "USDCAD", "AUDJPY", "EURCHF",
+    "GBPCHF", "CADJPY", "NZDJPY", "USDSGD", "EURCAD", "EURAUD",
+    "GBPAUD", "AUDCAD", "NZDCAD", "AUDNZD", "CHFJPY", "USDHKD",
+    "USDTRY", "EURTRY", "GBPNZD", "EURNZD", "USDMXN", "USDZAR"
 ]
 
 def send_telegram_message(message):
@@ -27,7 +27,7 @@ def send_telegram_message(message):
         print(f"Error enviando mensaje Telegram: {e}")
 
 def fetch_data(symbol):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol.replace('/', '')}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}&format=JSON"
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}&format=JSON"
     try:
         response = requests.get(url)
         data = response.json()
@@ -78,7 +78,8 @@ def analyze_pair(symbol):
         signal = check_signal(df)
         if signal:
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            message = f"SEÑAL {signal} en {symbol} - Expiración: 5 minutos\nHora: {timestamp}"
+            pretty_symbol = symbol[:3] + "/" + symbol[3:]
+            message = f"SEÑAL {signal} en {pretty_symbol} - Expiración: 5 minutos\nHora: {timestamp}"
             print(message)
             send_telegram_message(message)
 

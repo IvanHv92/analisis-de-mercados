@@ -5,7 +5,7 @@ from threading import Thread
 
 # CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
-INTERVAL = "5min"  # Velas de 5 minutos
+INTERVAL = "1min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
@@ -13,17 +13,20 @@ PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
     "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN"
+    "GBP/JPY", "USD/BDT", "USD/MXN",
+    "CAD/JPY", "GBP/CAD", "CAD/CHF", "NZD/CAD", "EUR/AUD"
 ]
+
+ULTIMAS_SENIALES = {}
 
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
     requests.post(url, data=data)
 
-def guardar_csv(fecha, par, tipo, estrategia, precio, expiracion):
-    with open("senales_multicriterio.csv", "a", newline="") as f:
-        csv.writer(f).writerow([fecha, par, tipo, estrategia, round(precio, 5), expiracion])
+def guardar_csv(fecha, par, tipo, estrategias, precio, expiracion):
+    with open("senales_cci_rsi.csv", "a", newline="") as f:
+        csv.writer(f).writerow([fecha, par, tipo, estrategias, round(precio, 5), expiracion])
 
 def obtener_datos(symbol):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
@@ -37,7 +40,6 @@ def obtener_datos(symbol):
     df["close"] = df["close"].astype(float)
     df["high"] = df["high"].astype(float)
     df["low"] = df["low"].astype(float)
-    df["open"] = df["open"].astype(float)
     return df
 
 def analizar(symbol):
@@ -45,72 +47,59 @@ def analizar(symbol):
     if df is None:
         return
 
-    # Indicadores
-    df["ema9"] = ta.trend.ema_indicator(df["close"], window=9)
-    df["ema21"] = ta.trend.ema_indicator(df["close"], window=21)
-    df["rsi"] = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
-    df["macd_line"] = ta.trend.macd(df["close"], window_slow=26, window_fast=12)
-    df["macd_signal"] = ta.trend.macd_signal(df["close"], window_slow=26, window_fast=12)
-    df["adx"] = ta.trend.adx(df["high"], df["low"], df["close"], window=14)
+    df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
+    df["cci"] = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], 20).cci()
+    df["ema9"] = ta.trend.EMAIndicator(df["close"], 9).ema_indicator()
+    df["ema20"] = ta.trend.EMAIndicator(df["close"], 20).ema_indicator()
 
     u = df.iloc[-1]
     a = df.iloc[-2]
+    estrategias = []
 
-    estrategia = ""
-    tipo = ""
+    if u["cci"] > 100:
+        estrategias.append("CCI +100 PUT")
+    elif u["cci"] < -100:
+        estrategias.append("CCI -100 CALL")
 
-    # Reglas
-    cruce_ema_call = a["ema9"] < a["ema21"] and u["ema9"] > u["ema21"]
-    cruce_ema_put = a["ema9"] > a["ema21"] and u["ema9"] < u["ema21"]
+    if u["rsi"] > 70:
+        estrategias.append("RSI > 70 PUT")
+    elif u["rsi"] < 30:
+        estrategias.append("RSI < 30 CALL")
 
-    rsi_oversold = u["rsi"] < 30
-    rsi_overbought = u["rsi"] > 70
+    if a["ema9"] < a["ema20"] and u["ema9"] > u["ema20"]:
+        estrategias.append("Cruce EMA CALL")
+    elif a["ema9"] > a["ema20"] and u["ema9"] < u["ema20"]:
+        estrategias.append("Cruce EMA PUT")
 
-    macd_call = a["macd_line"] < a["macd_signal"] and u["macd_line"] > u["macd_signal"]
-    macd_put = a["macd_line"] > a["macd_signal"] and u["macd_line"] < u["macd_signal"]
-
-    adx_fuerte = u["adx"] > 25
-    volatilidad_ok = (u["high"] - u["low"]) / u["close"] < 0.03
-
-    vela_rechazo_call = u["close"] > u["open"] and u["low"] < a["low"]
-    vela_rechazo_put = u["close"] < u["open"] and u["high"] > a["high"]
-
-    if all([cruce_ema_call, rsi_oversold, macd_call, adx_fuerte, volatilidad_ok, vela_rechazo_call]):
-        estrategia = "MULTI-INDICADORES CALL"
-        tipo = "CALL"
-    elif all([cruce_ema_put, rsi_overbought, macd_put, adx_fuerte, volatilidad_ok, vela_rechazo_put]):
-        estrategia = "MULTI-INDICADORES PUT"
-        tipo = "PUT"
-
-    if estrategia:
+    if len(estrategias) >= 2:
+        tipo = "CALL" if "CALL" in " ".join(estrategias) else "PUT"
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        symbol_display = symbol[:3] + "/" + symbol[3:]
+        estrellas = "⭐" * len(estrategias)
         mensaje = (
-            f"📊 Señal {tipo} en {symbol_display} ({fecha}):\n"
-            f"{estrategia}\n"
-            f"⏱️ Expiración sugerida: 5 minutos\n"
-            f"📈 Confirmada por: EMA + RSI + MACD + ADX + Vela"
+            f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
+            + "\n".join(estrategias) +
+            f"\n⏱️ Expiración sugerida: 2 min\n"
+            f"📈 Confianza: {estrellas}"
         )
         enviar_telegram(mensaje)
-        guardar_csv(fecha, symbol_display, tipo, estrategia, u["close"], "5 min")
+        guardar_csv(fecha, symbol, tipo, ", ".join(estrategias), u["close"], "2 min")
         print(mensaje)
     else:
-        print(f"[{symbol}] ❌ Sin señal clara")
+        print(f"[{symbol}] ❌ Señal débil o no clara")
 
 def iniciar():
     while True:
-        print("⏳ Analizando todos los pares...")
+        print("⏳ Analizando pares...")
         for par in PARES:
             analizar(par)
-        print("🕒 Esperando 5 minutos...\n")
-        time.sleep(300)  # 5 minutos
+        print("🕒 Esperando 1 minuto...\n")
+        time.sleep(60)
 
-# Flask para mantener activo en Render
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "✅ Bot activo con estrategia MULTI-INDICADOR (EMA + RSI + MACD + ADX + vela) [5min]"
+    return "✅ Bot activo: CCI + RSI + Cruce EMA (relajado, cada 1 min)"
 
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 iniciar()

@@ -18,17 +18,20 @@ PARES = [
 
 ULTIMAS_SENIALES = {}
 
+# Función para enviar mensajes a Telegram
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
     requests.post(url, data=data)
 
-def guardar_csv(fecha, par, tipo, precio, expiracion):
+# Función para guardar en CSV
+def guardar_csv(fecha, par, tipo, estrategia, precio, expiracion):
     with open("senales_schaff.csv", "a", newline="") as f:
-        csv.writer(f).writerow([fecha, par, tipo, round(precio, 5), expiracion])
+        csv.writer(f).writerow([fecha, par, tipo, estrategia, round(precio, 5), expiracion])
 
+# Función para obtener los datos de cada par
 def obtener_datos(symbol):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=200&apikey={API_KEY}"
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
     r = requests.get(url).json()
     if "values" not in r:
         print(f"❌ Error al obtener datos de {symbol}")
@@ -41,64 +44,72 @@ def obtener_datos(symbol):
     df["low"] = df["low"].astype(float)
     return df
 
-def calcular_schaff(df):
-    macd = ta.trend.MACD(df["close"], window_slow=40, window_fast=28, window_sign=9)
-    df["macd"] = macd.macd()
-    df["macd_signal"] = macd.macd_signal()
-    
-    stoch = ta.momentum.StochasticOscillator(high=df["high"], low=df["low"], close=df["macd"], window=12)
-    df["schaff"] = stoch.stoch_signal()
-    return df
+# Cálculo de Schaff Trend Cycle
+def schaff_trend_cycle(close, high, low, macd_len, fast_len, slow_len):
+    macd = ta.trend.MACD(close, window_slow=slow_len, window_fast=fast_len, window_sign=9)
+    stoch_k = ta.momentum.StochasticOscillator(
+        high=high,
+        low=low,
+        close=macd.macd(),
+        window=macd_len
+    ).stoch()
+    return stoch_k
 
+# Análisis de señales
 def analizar(symbol):
     df = obtener_datos(symbol)
     if df is None:
         return
-    
-    try:
-        df = calcular_schaff(df)
-    except Exception as e:
-        print(f"⚠️ Error al calcular Schaff en {symbol}: {e}")
-        return
 
+    df["stc"] = schaff_trend_cycle(df["close"], df["high"], df["low"], macd_len=12, fast_len=28, slow_len=40)
     u = df.iloc[-1]
     a = df.iloc[-2]
 
-    if u["schaff"] < 25 and a["schaff"] > u["schaff"]:
-        tipo = "CALL"
-    elif u["schaff"] > 75 and a["schaff"] < u["schaff"]:
-        tipo = "PUT"
-    else:
-        print(f"[{symbol}] ❌ Sin cruce en zonas extremas")
+    if pd.isna(a["stc"]) or pd.isna(u["stc"]):
+        print(f"⚠️ Insuficiente información en {symbol}")
         return
 
-    ahora = datetime.now()
-    fecha = ahora.strftime("%Y-%m-%d %H:%M:%S")
-    expiracion = "2 min"
-    mensaje = (
-        f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
-        f"Schaff Trend Cycle = {round(u['schaff'], 2)}\n"
-        f"⏱️ Expiración sugerida: {expiracion}\n"
-        f"📈 Confirmación por cruce en zona {'baja' if tipo=='CALL' else 'alta'}"
-    )
+    estrategia = ""
+    tipo = ""
 
-    enviar_telegram(mensaje)
-    guardar_csv(fecha, symbol, tipo, u["close"], expiracion)
-    print(mensaje)
+    # CORREGIDO: Entrada PUT si el STC cruza hacia ABAJO de 0.75
+    if a["stc"] > 0.75 and u["stc"] < 0.75:
+        estrategia = "Schaff Trend Cycle PUT"
+        tipo = "PUT"
+    # Entrada CALL si el STC cruza hacia ARRIBA de 0.25
+    elif a["stc"] < 0.25 and u["stc"] > 0.25:
+        estrategia = "Schaff Trend Cycle CALL"
+        tipo = "CALL"
 
+    if estrategia:
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        mensaje = (
+            f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
+            f"{estrategia}\n"
+            f"⏱️ Expiración sugerida: 2 min\n"
+            f"📈 Indicador STC: {round(u['stc'], 3)}"
+        )
+        enviar_telegram(mensaje)
+        guardar_csv(fecha, symbol, tipo, estrategia, u["close"], "2 min")
+        print(mensaje)
+    else:
+        print(f"[{symbol}] ❌ Sin señal clara")
+
+# Función principal
 def iniciar():
     while True:
-        print("⏳ Analizando todos los pares...")
+        print("⏳ Analizando todos los pares con Schaff Trend Cycle...")
         for par in PARES:
             analizar(par)
-        print("🕒 Esperando 1 minuto...\n")
+        print("🕒 Esperando 60 segundos...\n")
         time.sleep(60)
 
+# Flask para mantener activo
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "✅ Bot activo con Schaff Trend Cycle (30s velas, exp 2min)"
+    return "✅ Bot Schaff activo (STC cruzando 0.75 y 0.25)"
 
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 iniciar()

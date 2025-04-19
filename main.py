@@ -3,7 +3,6 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 
-# CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
 INTERVAL = "1min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
@@ -13,8 +12,7 @@ PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
     "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN",
-    "CAD/JPY", "GBP/CAD", "CAD/CHF", "NZD/CAD", "EUR/AUD"
+    "GBP/JPY", "USD/BDT", "USD/MXN"
 ]
 
 ULTIMAS_SENIALES = {}
@@ -38,6 +36,8 @@ def obtener_datos(symbol):
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime")
     df["close"] = df["close"].astype(float)
+    df["high"] = df["high"].astype(float)
+    df["low"] = df["low"].astype(float)
     return df
 
 def analizar(symbol):
@@ -45,15 +45,13 @@ def analizar(symbol):
     if df is None:
         return
 
-    df["cci14"] = ta.trend.CCIIndicator(df["close"], window=14).cci()
-    df["cci20"] = ta.trend.CCIIndicator(df["close"], window=20).cci()
-    df["cci50"] = ta.trend.CCIIndicator(df["close"], window=50).cci()
+    df["cci14"] = ta.trend.CCIIndicator(high=df["high"], low=df["low"], close=df["close"], window=14).cci()
+    df["cci20"] = ta.trend.CCIIndicator(high=df["high"], low=df["low"], close=df["close"], window=20).cci()
+    df["cci50"] = ta.trend.CCIIndicator(high=df["high"], low=df["low"], close=df["close"], window=50).cci()
 
     u = df.iloc[-1]
-    a = df.iloc[-2]
     estrategias = []
 
-    # Triple CCI estrategia
     if u["cci14"] > 100 and u["cci20"] > 100 and u["cci50"] > 100:
         estrategias.append("Triple CCI CALL")
     elif u["cci14"] < -100 and u["cci20"] < -100 and u["cci50"] < -100:
@@ -61,25 +59,22 @@ def analizar(symbol):
 
     if estrategias:
         tipo = "CALL" if "CALL" in estrategias[0] else "PUT"
-        fuerza = len(estrategias)
-        expiracion = "5 min"
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        estrellas = "⭐" * fuerza
         mensaje = (
             f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
             + "\n".join(estrategias) +
-            f"\n⏱️ Expiración sugerida: {expiracion}\n"
-            f"📈 Confianza: {estrellas}"
+            f"\n⏱️ Expiración sugerida: 5 min\n"
+            f"📈 Confianza: ⭐"
         )
         enviar_telegram(mensaje)
-        guardar_csv(fecha, symbol, tipo, ", ".join(estrategias), u["close"], expiracion)
+        guardar_csv(fecha, symbol, tipo, ", ".join(estrategias), u["close"], "5 min")
         print(mensaje)
     else:
         print(f"[{symbol}] ❌ Sin señal clara")
 
 def iniciar():
     while True:
-        print("⏳ Analizando todos los pares con estrategia CCI...")
+        print("⏳ Analizando todos los pares...")
         for par in PARES:
             analizar(par)
         print("🕒 Esperando 2 minutos...\n")
@@ -89,7 +84,7 @@ app = Flask('')
 
 @app.route('/')
 def home():
-    return "✅ Bot activo con estrategia: Triple CCI (cada 2 min)"
+    return "✅ Bot CCI activo (1min velas, expiración 5min, estrategia triple CCI)"
 
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 iniciar()

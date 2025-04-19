@@ -3,7 +3,6 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 
-# CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
 INTERVAL = "1min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
@@ -13,24 +12,21 @@ PARES = [
     "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
     "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
     "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN", "CAD/JPY",
-    "GBP/CAD", "CAD/CHF", "NZD/CAD", "EUR/AUD"
+    "GBP/JPY", "USD/BDT", "USD/MXN", "CAD/JPY", "GBP/CAD",
+    "CAD/CHF", "NZD/CAD", "EUR/AUD"
 ]
 
 ULTIMAS_SENIALES = {}
 
-# Enviar mensaje por Telegram
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
     requests.post(url, data=data)
 
-# Guardar en CSV
-def guardar_csv(fecha, par, tipo, estrategias, precio, expiracion):
-    with open("senales_final.csv", "a", newline="") as f:
-        csv.writer(f).writerow([fecha, par, tipo, estrategias, round(precio, 5), expiracion])
+def guardar_csv(fecha, par, tipo, estrategias, precio):
+    with open("senales_cci.csv", "a", newline="") as f:
+        csv.writer(f).writerow([fecha, par, tipo, estrategias, round(precio, 5)])
 
-# Obtener datos históricos
 def obtener_datos(symbol):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
     r = requests.get(url).json()
@@ -41,61 +37,63 @@ def obtener_datos(symbol):
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime")
     df["close"] = df["close"].astype(float)
+    df["high"] = df["high"].astype(float)
+    df["low"] = df["low"].astype(float)
     return df
 
-# Análisis con Triple EMA + RSI
 def analizar(symbol):
     df = obtener_datos(symbol)
     if df is None:
         return
 
-    df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
-    df["ema9"] = ta.trend.EMAIndicator(df["close"], 9).ema_indicator()
-    df["ema20"] = ta.trend.EMAIndicator(df["close"], 20).ema_indicator()
-    df["ema50"] = ta.trend.EMAIndicator(df["close"], 50).ema_indicator()
+    cci1 = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], window=20)
+    cci2 = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], window=50)
+    cci3 = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], window=100)
+
+    df["cci20"] = cci1.cci()
+    df["cci50"] = cci2.cci()
+    df["cci100"] = cci3.cci()
 
     u = df.iloc[-1]
-    a = df.iloc[-2]
     estrategias = []
 
-    if a["ema9"] < a["ema20"] < a["ema50"] and u["ema9"] > u["ema20"] > u["ema50"] and u["rsi"] > 50:
-        estrategias.append("Triple EMA + RSI CALL")
-    if a["ema9"] > a["ema20"] > a["ema50"] and u["ema9"] < u["ema20"] < u["ema50"] and u["rsi"] < 50:
-        estrategias.append("Triple EMA + RSI PUT")
+    if u["cci20"] > 100 and u["cci50"] > 100 and u["cci100"] > 100:
+        estrategias.append("Triple CCI CALL")
+    elif u["cci20"] < -100 and u["cci50"] < -100 and u["cci100"] < -100:
+        estrategias.append("Triple CCI PUT")
 
     if estrategias:
         tipo = "CALL" if "CALL" in estrategias[0] else "PUT"
-        fuerza = len(estrategias)
-        expiracion = "5 min"
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        estrellas = "⭐" * fuerza
         mensaje = (
-            f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
-            + "\n".join(estrategias) +
-            f"\n⏱️ Expiración sugerida: {expiracion}\n"
-            f"📈 Confianza: {estrellas}"
+            f"📊 Señal {tipo} en {symbol} ({fecha}):
+"
+            + "
+".join(estrategias) +
+            f"
+⏱️ Expiración sugerida: 5 min
+📈 Confianza: ⭐"
         )
         enviar_telegram(mensaje)
-        guardar_csv(fecha, symbol, tipo, ", ".join(estrategias), u["close"], expiracion)
+        guardar_csv(fecha, symbol, tipo, ", ".join(estrategias), u["close"])
         print(mensaje)
     else:
         print(f"[{symbol}] ❌ Sin señal clara")
 
-# Loop principal
 def iniciar():
     while True:
-        print("⏳ Analizando todos los pares...")
+        print("⏳ Analizando todos los pares con CCI...")
         for par in PARES:
             analizar(par)
-        print("🕒 Esperando 1 minutos...\n")
+        print("🕒 Esperando 1 minuto...
+")
         time.sleep(60)
 
-# Flask para Render
 app = Flask('')
 
 @app.route('/')
 def home():
-    return "✅ Bot activo con Triple EMA + RSI (cada 2 min)"
+    return "✅ Bot activo con estrategia: Triple CCI (cada 1 min)"
 
 Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
 iniciar()

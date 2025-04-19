@@ -5,7 +5,6 @@ import time
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
-# Configuración
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
 INTERVAL = "1min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
@@ -22,18 +21,28 @@ SYMBOLS = [
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-    requests.post(url, data=data)
+    try:
+        requests.post(url, data=data)
+    except Exception as e:
+        print(f"Error enviando mensaje Telegram: {e}")
 
 def fetch_data(symbol):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol.replace('/', '')}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}&format=JSON"
-    response = requests.get(url)
-    data = response.json()["values"]
-    df = pd.DataFrame(data)
-    df["datetime"] = pd.to_datetime(df["datetime"])
-    df = df.sort_values("datetime")
-    df.set_index("datetime", inplace=True)
-    df = df.astype(float)
-    return df
+    try:
+        response = requests.get(url)
+        data = response.json()
+        if "values" not in data:
+            print(f"[{symbol}] Respuesta sin 'values': {data}")
+            return None
+        df = pd.DataFrame(data["values"])
+        df["datetime"] = pd.to_datetime(df["datetime"])
+        df = df.sort_values("datetime")
+        df.set_index("datetime", inplace=True)
+        df = df.astype(float)
+        return df
+    except Exception as e:
+        print(f"Error al obtener datos de {symbol}: {e}")
+        return None
 
 def check_signal(df):
     df["ema9"] = ta.trend.ema_indicator(df["close"], window=9)
@@ -64,23 +73,21 @@ def check_signal(df):
         return None
 
 def analyze_pair(symbol):
-    try:
-        df = fetch_data(symbol)
+    df = fetch_data(symbol)
+    if df is not None:
         signal = check_signal(df)
         if signal:
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             message = f"SEÑAL {signal} en {symbol} - Expiración: 5 minutos\nHora: {timestamp}"
             print(message)
             send_telegram_message(message)
-    except Exception as e:
-        print(f"Error analizando {symbol}: {e}")
 
 def run_bot():
     while True:
         print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Iniciando análisis...")
         with ThreadPoolExecutor(max_workers=10) as executor:
             executor.map(analyze_pair, SYMBOLS)
-        time.sleep(60)  # Cada minuto
+        time.sleep(60)
 
 if __name__ == "__main__":
     run_bot()

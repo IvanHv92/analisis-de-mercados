@@ -1,96 +1,86 @@
-import requests, pandas as pd, ta, time, csv
+import requests
+import pandas as pd
+import ta
+import time
 from datetime import datetime
-from flask import Flask
-from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
 
-# CONFIGURACIÓN
+# Configuración
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
 INTERVAL = "1min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
-PARES = [
-    "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
-    "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
-    "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN", "EUR/NZD", "GBP/CHF",
-    "CAD/JPY", "GBP/CAD", "CAD/CHF", "NZD/CAD", "EUR/AUD"
+SYMBOLS = [
+    "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD", "NZD/USD",
+    "EUR/JPY", "GBP/JPY", "EUR/GBP", "USD/CAD", "AUD/JPY", "EUR/CHF",
+    "GBP/CHF", "CAD/JPY", "NZD/JPY", "USD/SGD", "EUR/CAD", "EUR/AUD",
+    "GBP/AUD", "AUD/CAD", "NZD/CAD", "AUD/NZD", "CHF/JPY", "USD/HKD",
+    "USD/TRY", "EUR/TRY", "GBP/NZD", "EUR/NZD", "USD/MXN", "USD/ZAR"
 ]
 
-def enviar_telegram(mensaje):
+def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     requests.post(url, data=data)
 
-def guardar_csv(fecha, par, tipo, estrategia, precio, expiracion):
-    with open("senales_cci_rsi.csv", "a", newline="") as f:
-        csv.writer(f).writerow([fecha, par, tipo, estrategia, round(precio, 5), expiracion])
-
-def obtener_datos(symbol):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
-    r = requests.get(url).json()
-    if "values" not in r:
-        print(f"❌ Error al obtener datos de {symbol}")
-        return None
-    df = pd.DataFrame(r["values"])
+def fetch_data(symbol):
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol.replace('/', '')}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}&format=JSON"
+    response = requests.get(url)
+    data = response.json()["values"]
+    df = pd.DataFrame(data)
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime")
-    df["close"] = df["close"].astype(float)
-    df["high"] = df["high"].astype(float)
-    df["low"] = df["low"].astype(float)
+    df.set_index("datetime", inplace=True)
+    df = df.astype(float)
     return df
 
-def analizar(symbol):
-    df = obtener_datos(symbol)
-    if df is None:
-        return
+def check_signal(df):
+    df["ema9"] = ta.trend.ema_indicator(df["close"], window=9)
+    df["ema21"] = ta.trend.ema_indicator(df["close"], window=21)
+    df["rsi"] = ta.momentum.rsi(df["close"], window=14)
+    df["macd_hist"] = ta.trend.macd_diff(df["close"])
+    df["adx"] = ta.trend.adx(df["high"], df["low"], df["close"], window=14)
 
-    # Indicadores CCI y RSI
-    df["cci"] = ta.trend.CCIIndicator(high=df["high"], low=df["low"], close=df["close"], window=20).cci()
-    df["rsi"] = ta.momentum.RSIIndicator(close=df["close"], window=14).rsi()
+    last = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    u = df.iloc[-1]
-    a = df.iloc[-2]
+    ema_bullish = last["ema9"] > last["ema21"] and prev["ema9"] <= prev["ema21"]
+    ema_bearish = last["ema9"] < last["ema21"] and prev["ema9"] >= prev["ema21"]
+    rsi_buy = last["rsi"] < 30
+    rsi_sell = last["rsi"] > 70
+    macd_buy = last["macd_hist"] > 0 and prev["macd_hist"] < 0
+    macd_sell = last["macd_hist"] < 0 and prev["macd_hist"] > 0
+    adx_strong = last["adx"] > 25
+    volatility_ok = (last["high"] - last["low"]) / last["close"] < 0.03
+    vela_bullish = last["close"] > last["open"] and last["low"] < prev["low"]
+    vela_bearish = last["close"] < last["open"] and last["high"] > prev["high"]
 
-    estrategia = ""
-    tipo = ""
-
-    # Condiciones para señales
-    if a["cci"] > 100 and u["cci"] < 100 and u["rsi"] < 70:
-        estrategia = "CCI + RSI PUT"
-        tipo = "PUT"
-    elif a["cci"] < -100 and u["cci"] > -100 and u["rsi"] > 30:
-        estrategia = "CCI + RSI CALL"
-        tipo = "CALL"
-
-    if estrategia:
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        mensaje = (
-            f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
-            f"{estrategia}\n"
-            f"⏱️ Expiración sugerida: 2 min\n"
-            f"📈 Confianza: ⭐⭐"
-        )
-        enviar_telegram(mensaje)
-        guardar_csv(fecha, symbol, tipo, estrategia, u["close"], "2 min")
-        print(mensaje)
+    if ema_bullish and rsi_buy and macd_buy and adx_strong and volatility_ok and vela_bullish:
+        return "CALL"
+    elif ema_bearish and rsi_sell and macd_sell and adx_strong and volatility_ok and vela_bearish:
+        return "PUT"
     else:
-        print(f"[{symbol}] ❌ Sin señal clara")
+        return None
 
-def iniciar():
+def analyze_pair(symbol):
+    try:
+        df = fetch_data(symbol)
+        signal = check_signal(df)
+        if signal:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            message = f"SEÑAL {signal} en {symbol} - Expiración: 5 minutos\nHora: {timestamp}"
+            print(message)
+            send_telegram_message(message)
+    except Exception as e:
+        print(f"Error analizando {symbol}: {e}")
+
+def run_bot():
     while True:
-        print("⏳ Analizando todos los pares...")
-        for par in PARES:
-            analizar(par)
-        print("🕒 Esperando 1 minuto...\n")
-        time.sleep(60)
+        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Iniciando análisis...")
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            executor.map(analyze_pair, SYMBOLS)
+        time.sleep(60)  # Cada minuto
 
-# Flask para mantener activo en Render
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "✅ Bot activo con estrategia: CCI + RSI (1min, expiración 2min)"
-
-Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
-iniciar()
+if __name__ == "__main__":
+    run_bot()

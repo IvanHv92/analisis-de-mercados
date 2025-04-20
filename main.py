@@ -30,6 +30,8 @@ def obtener_datos(symbol):
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime")
     df["close"] = df["close"].astype(float)
+    df["high"] = df["high"].astype(float)
+    df["low"] = df["low"].astype(float)
     return df
 
 def analizar(symbol):
@@ -38,21 +40,46 @@ def analizar(symbol):
         return
 
     df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
-    df["cci"] = ta.trend.CCIIndicator(df["close"], df["close"], df["close"], 20).cci()
-    u = df.iloc[-1]
+    df["cci"] = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], 20).cci()
+    df["ema50"] = ta.trend.EMAIndicator(df["close"], 50).ema_indicator()
+
+    u = df.iloc[-1]     # Última vela
+    a = df.iloc[-2]     # Vela anterior
 
     rsi_val = round(u["rsi"], 2)
     cci_val = round(u["cci"], 2)
-
-    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Análisis {symbol}")
-    print(f"RSI: {rsi_val}, CCI: {cci_val}")
+    ema50 = u["ema50"]
 
     mensaje = None
 
-    if rsi_val < 30 and cci_val < -100:
-        mensaje = f"📊 Señal de COMPRA (CALL) en {symbol}\nRSI: {rsi_val} | CCI: {cci_val}\n⏱️ Posible reversa al alza"
-    elif rsi_val > 70 and cci_val > 100:
-        mensaje = f"📊 Señal de VENTA (PUT) en {symbol}\nRSI: {rsi_val} | CCI: {cci_val}\n⏱️ Posible reversa a la baja"
+    # Señal estricta CALL
+    if (
+        rsi_val < 30 and
+        cci_val < -100 and
+        u["close"] > ema50 and
+        a["close"] < a["ema50"]
+    ):
+        mensaje = (
+            f"📊 Señal de COMPRA (CALL) en {symbol}\n"
+            f"RSI: {rsi_val} | CCI: {cci_val}\n"
+            f"EMA50 cruzada al alza\n⏱️ Entrada confiable"
+        )
+
+    # Señal estricta PUT
+    elif (
+        rsi_val > 70 and
+        cci_val > 100 and
+        u["close"] < ema50 and
+        a["close"] > a["ema50"]
+    ):
+        mensaje = (
+            f"📊 Señal de VENTA (PUT) en {symbol}\n"
+            f"RSI: {rsi_val} | CCI: {cci_val}\n"
+            f"EMA50 cruzada a la baja\n⏱️ Entrada confiable"
+        )
+
+    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Análisis {symbol}")
+    print(f"RSI: {rsi_val}, CCI: {cci_val}")
 
     if mensaje:
         print("✅ Señal enviada a Telegram")
@@ -65,6 +92,7 @@ def ejecutar_bot():
         for cripto in CRIPTOS:
             analizar(cripto)
         print("⏳ Esperando 5 minutos...\n")
-        time.sleep(300)  # 5 minutos
+        time.sleep(300)
 
+# EJECUCIÓN
 ejecutar_bot()

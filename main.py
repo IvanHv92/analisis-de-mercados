@@ -3,6 +3,8 @@ import pandas as pd
 import ta
 import time
 from datetime import datetime
+from flask import Flask
+from threading import Thread
 
 # CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
@@ -11,6 +13,12 @@ CRIPTOS = ["BTC/USD", "ETH/USD", "XRP/USD", "SOL/USD", "DOGE/USD", "ADA/USD"]
 
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "✅ Bot de señales cripto (RSI + CCI) activo."
 
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -41,45 +49,20 @@ def analizar(symbol):
 
     df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
     df["cci"] = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], 20).cci()
-    df["ema50"] = ta.trend.EMAIndicator(df["close"], 50).ema_indicator()
-
-    u = df.iloc[-1]     # Última vela
-    a = df.iloc[-2]     # Vela anterior
+    u = df.iloc[-1]
 
     rsi_val = round(u["rsi"], 2)
     cci_val = round(u["cci"], 2)
-    ema50 = u["ema50"]
-
-    mensaje = None
-
-    # Señal estricta CALL
-    if (
-        rsi_val < 30 and
-        cci_val < -100 and
-        u["close"] > ema50 and
-        a["close"] < a["ema50"]
-    ):
-        mensaje = (
-            f"📊 Señal de COMPRA (CALL) en {symbol}\n"
-            f"RSI: {rsi_val} | CCI: {cci_val}\n"
-            f"EMA50 cruzada al alza\n⏱️ Entrada confiable"
-        )
-
-    # Señal estricta PUT
-    elif (
-        rsi_val > 70 and
-        cci_val > 100 and
-        u["close"] < ema50 and
-        a["close"] > a["ema50"]
-    ):
-        mensaje = (
-            f"📊 Señal de VENTA (PUT) en {symbol}\n"
-            f"RSI: {rsi_val} | CCI: {cci_val}\n"
-            f"EMA50 cruzada a la baja\n⏱️ Entrada confiable"
-        )
 
     print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Análisis {symbol}")
     print(f"RSI: {rsi_val}, CCI: {cci_val}")
+
+    mensaje = None
+
+    if rsi_val < 28 and cci_val < -120:
+        mensaje = f"📊 Señal de COMPRA (CALL) en {symbol}\nRSI: {rsi_val} | CCI: {cci_val}\n⏱️ Reversa potencial al alza"
+    elif rsi_val > 72 and cci_val > 120:
+        mensaje = f"📊 Señal de VENTA (PUT) en {symbol}\nRSI: {rsi_val} | CCI: {cci_val}\n⏱️ Reversa potencial a la baja"
 
     if mensaje:
         print("✅ Señal enviada a Telegram")
@@ -94,5 +77,7 @@ def ejecutar_bot():
         print("⏳ Esperando 5 minutos...\n")
         time.sleep(300)
 
-# EJECUCIÓN
-ejecutar_bot()
+# Ejecutar Flask y el bot en paralelo
+if __name__ == "__main__":
+    Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
+    ejecutar_bot()

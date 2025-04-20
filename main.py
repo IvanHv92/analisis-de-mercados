@@ -9,6 +9,17 @@ API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
 INTERVAL = "5min"
 CRIPTOS = ["BTC/USD", "ETH/USD", "XRP/USD", "SOL/USD", "DOGE/USD", "ADA/USD"]
 
+TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
+TELEGRAM_CHAT_ID = "5989911212"
+
+def enviar_telegram(mensaje):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
+    try:
+        requests.post(url, data=data)
+    except Exception as e:
+        print(f"❌ Error enviando mensaje a Telegram: {e}")
+
 def obtener_datos(symbol):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
     r = requests.get(url).json()
@@ -30,13 +41,22 @@ def analizar(symbol):
     df["cci"] = ta.trend.CCIIndicator(df["close"], df["close"], df["close"], 20).cci()
     u = df.iloc[-1]
 
-    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Análisis {symbol}")
-    print(f"RSI: {round(u['rsi'], 2)}, CCI: {round(u['cci'], 2)}")
+    rsi_val = round(u["rsi"], 2)
+    cci_val = round(u["cci"], 2)
 
-    if u["rsi"] < 30 and u["cci"] < -100:
-        print("✅ Señal CALL (posible reversa al alza)")
-    elif u["rsi"] > 70 and u["cci"] > 100:
-        print("✅ Señal PUT (posible reversa a la baja)")
+    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Análisis {symbol}")
+    print(f"RSI: {rsi_val}, CCI: {cci_val}")
+
+    mensaje = None
+
+    if rsi_val < 30 and cci_val < -100:
+        mensaje = f"📊 Señal de COMPRA (CALL) en {symbol}\nRSI: {rsi_val} | CCI: {cci_val}\n⏱️ Posible reversa al alza"
+    elif rsi_val > 70 and cci_val > 100:
+        mensaje = f"📊 Señal de VENTA (PUT) en {symbol}\nRSI: {rsi_val} | CCI: {cci_val}\n⏱️ Posible reversa a la baja"
+
+    if mensaje:
+        print("✅ Señal enviada a Telegram")
+        enviar_telegram(mensaje)
     else:
         print("❌ Sin señal clara")
 

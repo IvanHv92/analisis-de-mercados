@@ -1,32 +1,13 @@
-import requests, pandas as pd, ta, time, csv
+import requests
+import pandas as pd
+import ta
+import time
 from datetime import datetime
-from flask import Flask
-from threading import Thread
 
 # CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
-INTERVAL = "1min"
-TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
-TELEGRAM_CHAT_ID = "5989911212"
-
-PARES = [
-    "EUR/USD", "EUR/CAD", "EUR/CHF", "EUR/GBP", "EUR/JPY",
-    "AUD/CAD", "AUD/CHF", "AUD/USD", "AUD/JPY",
-    "USD/CHF", "USD/JPY", "USD/INR", "USD/CAD",
-    "GBP/JPY", "USD/BDT", "USD/MXN",
-    "CAD/JPY", "GBP/CAD", "CAD/CHF", "NZD/CAD", "EUR/AUD"
-]
-
-ULTIMAS_SENIALES = {}
-
-def enviar_telegram(mensaje):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
-    requests.post(url, data=data)
-
-def guardar_csv(fecha, par, tipo, estrategias, precio, expiracion):
-    with open("senales_cci_rsi.csv", "a", newline="") as f:
-        csv.writer(f).writerow([fecha, par, tipo, estrategias, round(precio, 5), expiracion])
+INTERVAL = "5min"
+CRIPTOS = ["BTC/USD", "ETH/USD", "XRP/USD", "SOL/USD", "DOGE/USD", "ADA/USD"]
 
 def obtener_datos(symbol):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
@@ -38,8 +19,6 @@ def obtener_datos(symbol):
     df["datetime"] = pd.to_datetime(df["datetime"])
     df = df.sort_values("datetime")
     df["close"] = df["close"].astype(float)
-    df["high"] = df["high"].astype(float)
-    df["low"] = df["low"].astype(float)
     return df
 
 def analizar(symbol):
@@ -48,58 +27,24 @@ def analizar(symbol):
         return
 
     df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
-    df["cci"] = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], 20).cci()
-    df["ema9"] = ta.trend.EMAIndicator(df["close"], 9).ema_indicator()
-    df["ema20"] = ta.trend.EMAIndicator(df["close"], 20).ema_indicator()
-
+    df["cci"] = ta.trend.CCIIndicator(df["close"], df["close"], df["close"], 20).cci()
     u = df.iloc[-1]
-    a = df.iloc[-2]
-    estrategias = []
 
-    if u["cci"] > 100:
-        estrategias.append("CCI +100 PUT")
-    elif u["cci"] < -100:
-        estrategias.append("CCI -100 CALL")
+    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Análisis {symbol}")
+    print(f"RSI: {round(u['rsi'], 2)}, CCI: {round(u['cci'], 2)}")
 
-    if u["rsi"] > 70:
-        estrategias.append("RSI > 70 PUT")
-    elif u["rsi"] < 30:
-        estrategias.append("RSI < 30 CALL")
-
-    if a["ema9"] < a["ema20"] and u["ema9"] > u["ema20"]:
-        estrategias.append("Cruce EMA CALL")
-    elif a["ema9"] > a["ema20"] and u["ema9"] < u["ema20"]:
-        estrategias.append("Cruce EMA PUT")
-
-    if len(estrategias) >= 2:
-        tipo = "CALL" if "CALL" in " ".join(estrategias) else "PUT"
-        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        estrellas = "⭐" * len(estrategias)
-        mensaje = (
-            f"📊 Señal {tipo} en {symbol} ({fecha}):\n"
-            + "\n".join(estrategias) +
-            f"\n⏱️ Expiración sugerida: 2 min\n"
-            f"📈 Confianza: {estrellas}"
-        )
-        enviar_telegram(mensaje)
-        guardar_csv(fecha, symbol, tipo, ", ".join(estrategias), u["close"], "2 min")
-        print(mensaje)
+    if u["rsi"] < 30 and u["cci"] < -100:
+        print("✅ Señal CALL (posible reversa al alza)")
+    elif u["rsi"] > 70 and u["cci"] > 100:
+        print("✅ Señal PUT (posible reversa a la baja)")
     else:
-        print(f"[{symbol}] ❌ Señal débil o no clara")
+        print("❌ Sin señal clara")
 
-def iniciar():
+def ejecutar_bot():
     while True:
-        print("⏳ Analizando pares...")
-        for par in PARES:
-            analizar(par)
-        print("🕒 Esperando 1 minuto...\n")
-        time.sleep(60)
+        for cripto in CRIPTOS:
+            analizar(cripto)
+        print("⏳ Esperando 5 minutos...\n")
+        time.sleep(300)  # 5 minutos
 
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "✅ Bot activo: CCI + RSI + Cruce EMA (relajado, cada 1 min)"
-
-Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
-iniciar()
+ejecutar_bot()

@@ -6,18 +6,20 @@ from datetime import datetime
 from flask import Flask
 from threading import Thread
 
-# CONFIGURACIÓN GENERAL
-API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
+# CONFIGURACIÓN
+API_KEY = "TU_API_KEY_DE_TWELVE_DATA"
 INTERVAL = "5min"
+TELEGRAM_TOKEN = "TU_TELEGRAM_BOT_TOKEN"
+TELEGRAM_CHAT_ID = "TU_CHAT_ID"
 
-# TELEGRAM
-TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
-TELEGRAM_CHAT_ID = "5989911212"
-
-# ✅ LISTA DE ACTIVOS
 ACTIVOS = [
+    # Metales
+    "XAU/USD", "XAG/USD", "COPPER/USD",
+
     # Criptomonedas
     "BTC/USD", "ETH/USD", "XRP/USD", "SOL/USD", "DOGE/USD", "ADA/USD",
+    "DOT/USD", "LTC/USD", "TRUMP/USD", "AVAX/USD", "SHIB/USD", "BNB/USD",
+    "MATIC/USD", "UNI/USD", "LINK/USD", "XLM/USD", "NEAR/USD",
 
     # Divisas
     "EUR/AUD", "EUR/USD", "AUD/USD", "USD/CAD", "USD/MXN",
@@ -25,26 +27,30 @@ ACTIVOS = [
 
     # Acciones
     "BA", "GME", "AAPL", "NFLX", "TSLA", "META",
-    "MSFT", "AMC", "AMZN", "GOOGL", "MRNA", "NVDA"
+    "MSFT", "AMC", "AMZN", "GOOGL", "MRNA", "NVDA",
+
+    # Token TRUMP
+    "TRUMP/USD"
 ]
 
-# FLASK PARA RENDER
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ Bot activo: RSI + CCI | Intervalo 5min | Multi-activos"
+    return "✅ Bot RSI + CCI activo con reversas confirmadas y potenciales."
 
-# ENVÍO DE MENSAJES A TELEGRAM
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    data = {"chat_id": TELEGRAM_CHAT_ID, "text": mensaje}
+    data = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mensaje,
+        "parse_mode": "Markdown"
+    }
     try:
         requests.post(url, data=data)
     except Exception as e:
-        print(f"❌ Error enviando a Telegram: {e}")
+        print(f"❌ Error enviando mensaje a Telegram: {e}")
 
-# OBTENER DATOS DE TWELVE DATA
 def obtener_datos(symbol):
     url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
     r = requests.get(url).json()
@@ -59,7 +65,6 @@ def obtener_datos(symbol):
     df["low"] = df["low"].astype(float)
     return df
 
-# ANÁLISIS DE SEÑALES
 def analizar(symbol):
     df = obtener_datos(symbol)
     if df is None:
@@ -67,8 +72,9 @@ def analizar(symbol):
 
     df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
     df["cci"] = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], 20).cci()
-    u = df.iloc[-1]
 
+    u = df.iloc[-1]
+    a = df.iloc[-2]
     rsi_val = round(u["rsi"], 2)
     cci_val = round(u["cci"], 2)
 
@@ -77,10 +83,45 @@ def analizar(symbol):
 
     mensaje = None
 
-    if rsi_val < 28 and cci_val < -120:
-        mensaje = f"📈 Señal de COMPRA (CALL) en {symbol}\nRSI: {rsi_val} | CCI: {cci_val}\n⏱️ Reversa potencial al alza"
-    elif rsi_val > 72 and cci_val > 120:
-        mensaje = f"📉 Señal de VENTA (PUT) en {symbol}\nRSI: {rsi_val} | CCI: {cci_val}\n⏱️ Reversa potencial a la baja"
+    sobreventa = df.tail(5)[(df["rsi"] < 30) & (df["cci"] < -100)]
+    sobrecompra = df.tail(5)[(df["rsi"] > 70) & (df["cci"] > 100)]
+
+    if not sobreventa.empty:
+        if u["rsi"] > 40 and u["cci"] > 0 and u["close"] > a["close"]:
+            mensaje = (
+                f"🟩 *NUEVA SEÑAL (CALL)* - 🚀 *COMPRA*\n\n"
+                f"🔹 *Activo:* {symbol}\n"
+                f"📊 RSI: {rsi_val}\n"
+                f"📊 CCI: {cci_val}\n\n"
+                f"🔁 *Subida fuerte tras sobreventa reciente*\n"
+                f"⏱️ *Expiración sugerida:* 5 min"
+            )
+    elif not sobrecompra.empty:
+        if u["rsi"] < 60 and u["cci"] < 0 and u["close"] < a["close"]:
+            mensaje = (
+                f"🟥 *NUEVA SEÑAL (PUT)* - 🔥 *VENTA*\n\n"
+                f"🔹 *Activo:* {symbol}\n"
+                f"📊 RSI: {rsi_val}\n"
+                f"📊 CCI: {cci_val}\n\n"
+                f"🔻 *Bajada fuerte tras sobrecompra reciente*\n"
+                f"⏱️ *Expiración sugerida:* 5 min"
+            )
+    elif u["rsi"] < 30 and u["cci"] < -100:
+        mensaje = (
+            f"🟨 *POSIBLE REVERSA (CALL)* - 👀 *VIGILANCIA*\n\n"
+            f"🔹 *Activo:* {symbol}\n"
+            f"📊 RSI: {rsi_val}\n"
+            f"📊 CCI: {cci_val}\n\n"
+            f"⚠️ *Sobreventa detectada, esperando confirmación*"
+        )
+    elif u["rsi"] > 70 and u["cci"] > 100:
+        mensaje = (
+            f"🟨 *POSIBLE REVERSA (PUT)* - 👀 *VIGILANCIA*\n\n"
+            f"🔹 *Activo:* {symbol}\n"
+            f"📊 RSI: {rsi_val}\n"
+            f"📊 CCI: {cci_val}\n\n"
+            f"⚠️ *Sobrecompra detectada, esperando confirmación*"
+        )
 
     if mensaje:
         enviar_telegram(mensaje)
@@ -88,7 +129,6 @@ def analizar(symbol):
     else:
         print("❌ Sin señal clara")
 
-# CICLO PRINCIPAL
 def ejecutar_bot():
     while True:
         for activo in ACTIVOS:
@@ -96,7 +136,6 @@ def ejecutar_bot():
         print("⏳ Esperando 5 minutos...\n")
         time.sleep(300)
 
-# EJECUCIÓN PARA RENDER O LOCAL
 if __name__ == "__main__":
     Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()
     ejecutar_bot()

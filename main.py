@@ -52,7 +52,8 @@ def enviar_telegram(mensaje):
         print(f"❌ Error enviando mensaje a Telegram: {e}")
 
 def obtener_datos(symbol):
-    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
+    safe_symbol = symbol.replace("/", "%2F")
+    url = f"https://api.twelvedata.com/time_series?symbol={safe_symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
     r = requests.get(url).json()
     if "values" not in r:
         print(f"❌ Error al obtener datos de {symbol}")
@@ -82,9 +83,9 @@ def analizar(symbol):
     print(f"RSI: {rsi_val}, CCI: {cci_val}")
 
     mensaje = None
-
-    sobreventa = df.tail(5)[(df["rsi"] < 30) & (df["cci"] < -100)]
-    sobrecompra = df.tail(5)[(df["rsi"] > 70) & (df["cci"] > 100)]
+    ultimos = df.tail(5)
+    sobreventa = ultimos[(ultimos["rsi"] < 30) & (ultimos["cci"] < -100)]
+    sobrecompra = ultimos[(ultimos["rsi"] > 70) & (ultimos["cci"] > 100)]
 
     if not sobreventa.empty:
         if u["rsi"] > 40 and u["cci"] > 0 and u["close"] > a["close"]:

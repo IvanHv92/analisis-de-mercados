@@ -8,36 +8,25 @@ from threading import Thread
 
 # CONFIGURACIÓN
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
-INTERVAL = "5min"
+INTERVAL = "2min"
 TELEGRAM_TOKEN = "7099030025:AAE7LsZWHPRtUejJGcae0pDzonHwbDTL-no"
 TELEGRAM_CHAT_ID = "5989911212"
 
 ACTIVOS = [
-    # Metales
-    "XAU/USD", "XAG/USD", "COPPER/USD",
+    # Criptomonedas principales
+    "BTC/USD", "ETH/USD", "XRP/USD", "SOL/USD", "BNB/USD",
+    "DOGE/USD", "ADA/USD", "DOT/USD", "AVAX/USD", "LTC/USD",
 
-    # Criptomonedas
-    "BTC/USD", "ETH/USD", "XRP/USD", "SOL/USD", "DOGE/USD", "ADA/USD",
-    "DOT/USD", "LTC/USD", "TRUMP/USD", "AVAX/USD", "SHIB/USD", "BNB/USD",
-    "MATIC/USD", "UNI/USD", "LINK/USD", "XLM/USD", "NEAR/USD",
-
-    # Divisas
-    "EUR/AUD", "EUR/USD", "AUD/USD", "USD/CAD", "USD/MXN",
-    "USD/CHF", "GBP/USD", "NZD/USD", "USD/JPY", "GBP/JPY",
-
-    # Acciones
-    "BA", "GME", "AAPL", "NFLX", "TSLA", "META",
-    "MSFT", "AMC", "AMZN", "GOOGL", "MRNA", "NVDA",
-
-    # Token TRUMP
-    "TRUMP/USD"
+    # Divisas principales
+    "EUR/USD", "GBP/USD", "USD/JPY", "USD/CHF", "AUD/USD",
+    "USD/CAD", "NZD/USD", "EUR/JPY", "GBP/JPY"
 ]
 
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "✅ Bot RSI + CCI activo con reversas confirmadas y potenciales."
+    return "✅ Bot señales cripto y forex activo."
 
 def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -46,14 +35,11 @@ def enviar_telegram(mensaje):
         "text": mensaje,
         "parse_mode": "Markdown"
     }
-    try:
-        requests.post(url, data=data)
-    except Exception as e:
-        print(f"❌ Error enviando mensaje a Telegram: {e}")
+    requests.post(url, json=data)
 
 def obtener_datos(symbol):
-    safe_symbol = symbol.replace("/", "%2F")
-    url = f"https://api.twelvedata.com/time_series?symbol={safe_symbol}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
+    symbol_encoded = symbol.replace("/", "%2F")
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol_encoded}&interval={INTERVAL}&outputsize=100&apikey={API_KEY}"
     r = requests.get(url).json()
     if "values" not in r:
         print(f"❌ Error al obtener datos de {symbol}")
@@ -68,74 +54,49 @@ def obtener_datos(symbol):
 
 def analizar(symbol):
     df = obtener_datos(symbol)
-    if df is None:
+    if df is None or len(df) < 30:
         return
 
-    df["rsi"] = ta.momentum.RSIIndicator(df["close"], 14).rsi()
-    df["cci"] = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], 20).cci()
+    df["ema9"] = ta.trend.EMAIndicator(df["close"], window=9).ema_indicator()
+    df["ema21"] = ta.trend.EMAIndicator(df["close"], window=21).ema_indicator()
+    df["rsi"] = ta.momentum.RSIIndicator(df["close"], window=14).rsi()
+    df["cci"] = ta.trend.CCIIndicator(df["high"], df["low"], df["close"], window=20).cci()
 
     u = df.iloc[-1]
     a = df.iloc[-2]
-    rsi_val = round(u["rsi"], 2)
-    cci_val = round(u["cci"], 2)
-
-    print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Análisis {symbol}")
-    print(f"RSI: {rsi_val}, CCI: {cci_val}")
 
     mensaje = None
-    ultimos = df.tail(5)
-    sobreventa = ultimos[(ultimos["rsi"] < 30) & (ultimos["cci"] < -100)]
-    sobrecompra = ultimos[(ultimos["rsi"] > 70) & (ultimos["cci"] > 100)]
 
-    if not sobreventa.empty:
-        if u["rsi"] > 40 and u["cci"] > 0 and u["close"] > a["close"]:
-            mensaje = (
-                f"🟩 *NUEVA SEÑAL (CALL)* - 🚀 *COMPRA*\n\n"
-                f"🔹 *Activo:* {symbol}\n"
-                f"📊 RSI: {rsi_val}\n"
-                f"📊 CCI: {cci_val}\n\n"
-                f"🔁 *Subida fuerte tras sobreventa reciente*\n"
-                f"⏱️ *Expiración sugerida:* 5 min"
-            )
-    elif not sobrecompra.empty:
-        if u["rsi"] < 60 and u["cci"] < 0 and u["close"] < a["close"]:
-            mensaje = (
-                f"🟥 *NUEVA SEÑAL (PUT)* - 🔥 *VENTA*\n\n"
-                f"🔹 *Activo:* {symbol}\n"
-                f"📊 RSI: {rsi_val}\n"
-                f"📊 CCI: {cci_val}\n\n"
-                f"🔻 *Bajada fuerte tras sobrecompra reciente*\n"
-                f"⏱️ *Expiración sugerida:* 5 min"
-            )
-    elif u["rsi"] < 30 and u["cci"] < -100:
+    # Señal de COMPRA (CALL)
+    if u["rsi"] < 35 and u["cci"] < -100 and u["ema9"] > u["ema21"] and u["close"] > a["close"]:
         mensaje = (
-            f"🟨 *POSIBLE REVERSA (CALL)* - 👀 *VIGILANCIA*\n\n"
-            f"🔹 *Activo:* {symbol}\n"
-            f"📊 RSI: {rsi_val}\n"
-            f"📊 CCI: {cci_val}\n\n"
-            f"⚠️ *Sobreventa detectada, esperando confirmación*"
+            f"🟢 *SEÑAL CALL* - {symbol}\n"
+            f"📉 RSI: {round(u['rsi'], 2)} | CCI: {round(u['cci'], 2)}\n"
+            f"🔺 EMA9 > EMA21 | Precio subiendo\n"
+            f"⏱️ *Expiración sugerida:* 2-3 min"
         )
-    elif u["rsi"] > 70 and u["cci"] > 100:
+
+    # Señal de VENTA (PUT)
+    elif u["rsi"] > 65 and u["cci"] > 100 and u["ema9"] < u["ema21"] and u["close"] < a["close"]:
         mensaje = (
-            f"🟨 *POSIBLE REVERSA (PUT)* - 👀 *VIGILANCIA*\n\n"
-            f"🔹 *Activo:* {symbol}\n"
-            f"📊 RSI: {rsi_val}\n"
-            f"📊 CCI: {cci_val}\n\n"
-            f"⚠️ *Sobrecompra detectada, esperando confirmación*"
+            f"🔴 *SEÑAL PUT* - {symbol}\n"
+            f"📈 RSI: {round(u['rsi'], 2)} | CCI: {round(u['cci'], 2)}\n"
+            f"🔻 EMA9 < EMA21 | Precio bajando\n"
+            f"⏱️ *Expiración sugerida:* 2-3 min"
         )
 
     if mensaje:
         enviar_telegram(mensaje)
-        print("✅ Señal enviada")
+        print(f"✅ Señal enviada - {symbol}")
     else:
-        print("❌ Sin señal clara")
+        print(f"❌ Sin señal clara - {symbol}")
 
 def ejecutar_bot():
     while True:
-        for activo in ACTIVOS:
-            analizar(activo)
-        print("⏳ Esperando 5 minutos...\n")
-        time.sleep(300)
+        for symbol in ACTIVOS:
+            analizar(symbol)
+        print("⏳ Esperando 2 minutos...\n")
+        time.sleep(120)
 
 if __name__ == "__main__":
     Thread(target=lambda: app.run(host='0.0.0.0', port=8080)).start()

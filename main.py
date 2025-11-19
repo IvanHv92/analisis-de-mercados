@@ -177,16 +177,19 @@ def analyze_symbol(symbol: str):
             last = df.iloc[-1]
             dt = last["datetime"]
 
-            msg = (
-                f"🔔 Señal {signal} en {symbol}\n"
-                f"⏰ Vela 5m, casi cierre (analizada: {dt})\n"
-                f"💰 Precio: {last['close']:.5f}\n"
-                f"📊 Estrategia: EMAs 10/20/50 + Bollinger (retroceso y rechazo)\n"
-                f"👉 Entrar al cierre de esta vela (faltando ~1 min)."
+            bloque = (
+                "━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 BOT EMAs 10/20/50 + Bollinger\n"
+                f"📈 PAR: {symbol}\n"
+                f"🎯 TIPO: {signal}\n"
+                f"🕒 Vela 5m analizada: {dt} (UTC)\n"
+                f"💰 Precio actual: {last['close']:.5f}\n"
+                "📌 Condición: tendencia fuerte + retroceso + rechazo\n"
+                "👉 Entrar AL CIERRE de esta vela (faltando ~1 min).\n"
+                "━━━━━━━━━━━━━━━━━━━━━━"
             )
-            send_telegram_message(msg)
-        else:
-            print(f"Sin señal en {symbol}")
+
+            send_telegram_message(bloque)
 
     except Exception as e:
         print(f"Error analizando {symbol}: {e}")
@@ -205,8 +208,8 @@ def main_loop():
         minute = now.minute
         second = now.second
 
-        # Mensaje de "sigo vivo" cada ~30 iteraciones
-        if contador_debug % 30 == 0:
+        # Mensaje de "sigo vivo" cada ~60 iteraciones aprox.
+        if contador_debug % 60 == 0:
             print(f"Sigo vivo... {now} (UTC)")
             contador_debug = 0
         contador_debug += 1

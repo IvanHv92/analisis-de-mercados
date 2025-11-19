@@ -5,18 +5,19 @@ import requests
 import pandas as pd
 import ta
 
+print("✅ Iniciando script main.py...")
+
 # =========================
 # CONFIGURACIÓN
 # =========================
 
-# Tu API Key de Twelve Data (ya puesta)
+# Tu API Key de Twelve Data
 API_KEY = "8e0049007fcf4a21aa59a904ea8af292"
 
 # Opcional: si quieres señales por Telegram, pon aquí tus datos.
 # Si los dejas vacíos, el bot SOLO imprimirá las señales en consola.
 TELEGRAM_TOKEN = ""  # ej. "123456789:ABCDEF..."
 CHAT_ID = ""         # ej. "123456789"
-
 
 # Lista de pares a analizar (los que me mandaste en las capturas)
 SYMBOLS = [
@@ -35,8 +36,8 @@ SYMBOLS = [
     "EUR/AUD", "EUR/CHF", "EUR/GBP"
 ]
 
-INTERVAL = "5min"
-OUTPUTSIZE = 200  # velas a descargar en cada análisis
+INTERVAL = "5min"     # velas de 5 minutos
+OUTPUTSIZE = 200      # velas a descargar en cada análisis
 
 
 # =========================
@@ -78,14 +79,14 @@ def get_candles(symbol: str) -> pd.DataFrame:
 
 def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Agrega EMAs 20/50/100 y Bandas de Bollinger (20, 2).
+    Agrega EMAs 10/20/50 y Bandas de Bollinger (20, 2).
     """
     close = df["close"]
 
     # EMAs
+    df["ema10"] = close.ewm(span=10, adjust=False).mean()
     df["ema20"] = close.ewm(span=20, adjust=False).mean()
     df["ema50"] = close.ewm(span=50, adjust=False).mean()
-    df["ema100"] = close.ewm(span=100, adjust=False).mean()
 
     # Bollinger (20 periodos, 2 desviaciones)
     bb = ta.volatility.BollingerBands(close=close, window=20, window_dev=2)
@@ -98,18 +99,14 @@ def add_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 def check_signal(df: pd.DataFrame):
     """
-    Usa la última vela para decidir si hay señal CALL o PUT.
-
-    Estrategia:
-    - Tendencia por EMAs (20,50,100)
-    - Retroceso a banda media/superior/inferior
-    - Vela con rechazo (mecha) y cuerpo direccionado
+    Usa la última vela para decidir si hay señal CALL o PUT
+    con EMAs 10/20/50 y Bollinger.
     """
     last = df.iloc[-1]
 
+    ema10 = last["ema10"]
     ema20 = last["ema20"]
     ema50 = last["ema50"]
-    ema100 = last["ema100"]
 
     o = last["open"]
     c = last["close"]
@@ -127,7 +124,8 @@ def check_signal(df: pd.DataFrame):
     mitad_rango = l + rango / 2
 
     # ======= TENDENCIA ALCISTA → SOLO CALL =======
-    if ema20 > ema50 > ema100:
+    # EMAs alineadas hacia arriba: 10 > 20 > 50
+    if ema10 > ema20 > ema50:
         # Retroceso a banda media o baja
         if bb_low * 0.998 <= c <= bb_mid * 1.002:
             # cuerpo cerrando en mitad superior de la vela
@@ -136,7 +134,8 @@ def check_signal(df: pd.DataFrame):
                 return "CALL"
 
     # ======= TENDENCIA BAJISTA → SOLO PUT =======
-    if ema20 < ema50 < ema100:
+    # EMAs alineadas hacia abajo: 10 < 20 < 50
+    if ema10 < ema20 < ema50:
         # Retroceso a banda media o alta
         if bb_mid * 0.998 <= c <= bb_up * 1.002:
             # cuerpo cerrando en mitad inferior
@@ -182,7 +181,7 @@ def analyze_symbol(symbol: str):
                 f"🔔 Señal {signal} en {symbol}\n"
                 f"⏰ Vela 5m, casi cierre (analizada: {dt})\n"
                 f"💰 Precio: {last['close']:.5f}\n"
-                f"📊 Estrategia: 3 EMAs + Bollinger (retroceso y rechazo)\n"
+                f"📊 Estrategia: EMAs 10/20/50 + Bollinger (retroceso y rechazo)\n"
                 f"👉 Entrar al cierre de esta vela (faltando ~1 min)."
             )
             send_telegram_message(msg)
@@ -198,12 +197,19 @@ def analyze_symbol(symbol: str):
 # =========================
 
 def main_loop():
-    print("Bot iniciado. Analizando velas de 5 minutos...")
+    print("🚀 Bot iniciado. Analizando velas de 5 minutos...")
+    contador_debug = 0
     while True:
-        # Usamos hora UTC. Si quieres hora de México, puedes ajustar con timedelta
+        # Hora UTC
         now = datetime.utcnow()
         minute = now.minute
         second = now.second
+
+        # Mensaje de "sigo vivo" cada ~30 iteraciones
+        if contador_debug % 30 == 0:
+            print(f"Sigo vivo... {now} (UTC)")
+            contador_debug = 0
+        contador_debug += 1
 
         # Revisar 1 minuto antes de que cierre la vela de 5m:
         # velas cierran : 00,05,10,15,...
@@ -221,4 +227,7 @@ def main_loop():
 
 
 if __name__ == "__main__":
-    main_loop()
+    try:
+        main_loop()
+    except Exception as e:
+        print(f"❌ Error crítico en main_loop: {e}")
